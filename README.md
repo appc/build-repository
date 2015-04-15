@@ -46,3 +46,11 @@ Flannel has [dist/build-aci.sh](https://github.com/coreos/flannel/blob/master/di
 ```
 $ cd dist && ./build-aci.sh TAG
 ```
+
+### Java7 base image
+
+A base image containing OpenJDK 7 can be build using (packages2aci)[packages2aci.md].
+
+```
+bin/packages2aci java7/
+```
