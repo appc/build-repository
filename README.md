@@ -39,9 +39,9 @@ etcd has [scripts/build-aci](https://github.com/coreos/etcd/blob/master/scripts/
 $ scripts/build-aci VERSION
 ```
 
-### Flannel
+### flannel
 
-Flannel has [dist/build-aci.sh](https://github.com/coreos/flannel/blob/master/dist/build-aci.sh) to build an ACI:
+flannel has [dist/build-aci.sh](https://github.com/coreos/flannel/blob/master/dist/build-aci.sh) to build an ACI:
 
 ```
 $ cd dist && ./build-aci.sh TAG
