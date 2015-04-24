@@ -1,0 +1,226 @@
+#!/bin/bash
+
+set -e
+
+ME=$0
+COMMAND=$1
+
+function show-help() {
+  echo "Valid commands:"
+  echo "  init"
+  echo "  push"
+}
+
+function get_s3_bucket_location() {
+  BUCKET=$1
+
+  echo "Locating S3 bucket ${BUCKET}..."
+  local bucket_region=`aws --output text s3api get-bucket-location --bucket ${BUCKET}`
+  local url_base=https://s3-${bucket_region}.amazonaws.com/${BUCKET}
+
+  # us-east-1 does not fit the pattern
+  if [[ "${bucket_region}" == "None" ]]; then
+	bucket_region="us-east-1"
+	url_base=https://s3.amazonaws.com/${BUCKET}
+  fi
+
+  S3_BUCKET_REGION=${bucket_region}
+  S3_URL_BASE=${url_base}
+}
+
+function command-init() {
+  PREFIX=$1
+  REPO=$2
+
+  if [[ -z "${PREFIX}" || -z "${REPO}" ]]; then
+    echo "syntax: $ME init <prefix> <repo>"
+    echo "For example, $ME init aci.mydomain.com s3://aci.mydomain.com"
+    exit 1
+  fi
+
+  if [[ "${REPO}" == s3://* ]]; then
+    BUCKET=${REPO:5}
+
+	# TODO: Create bucket automatically?
+    BUILD=.build
+    mkdir -p ${BUILD}
+
+    if [[ ! -f ${BUILD}/pubkeys.gpg ]]; then
+      echo "Exporting public keys"
+	  gpg --armor --export --output .build/pubkeys.gpg
+	fi
+
+	cat <<EOF >${BUILD}/index.html
+<html>
+<head>
+<meta name="ac-discovery" content="${PREFIX} http://${PREFIX}/{os}/{arch}/{name}-{version}.{ext}">
+<meta name="ac-discovery-pubkeys" content="${PREFIX} pubkeys.gpg">
+</head>
+<body>
+</body>
+</html>
+EOF
+    get_s3_bucket_location ${BUCKET}
+    trust_url=${S3_URL_BASE}/pubkeys.gpg
+
+	# TODO: Non-public repos?
+	is_website=1
+	aws --region ${S3_BUCKET_REGION} s3api get-bucket-website --bucket ${BUCKET} >/dev/null 2>&1 || is_website=0
+	if [[ ${is_website} == 0 ]]; then
+	  echo "Making bucket website-accesible"
+  	  aws --region ${S3_BUCKET_REGION} s3api put-bucket-website --cli-input-json '{ "WebsiteConfiguration": { "IndexDocument": { "Suffix": "index.html" } } }' --bucket ${BUCKET}
+	fi
+
+	aws --region ${S3_BUCKET_REGION} s3 cp --acl public-read ${BUILD}/pubkeys.gpg s3://${BUCKET}/
+	aws --region ${S3_BUCKET_REGION} s3 cp --acl public-read ${BUILD}/index.html s3://${BUCKET}/
+  else
+    echo "Unknown repo schema: ${REPO}"
+    echo "Please specify the repo like s3://<bucketname>"
+    exit 1
+  fi
+
+  echo "Trust the repo using:"
+  echo "rkt trust --prefix ${PREFIX} ${trust_url}"
+}
+
+function command-push() {
+  IMAGE=$1
+  REPO=$2
+
+  if [[ -z "${IMAGE}" || -z "${REPO}" ]]; then
+    echo "syntax: $ME push <image> <repo>"
+    echo "For example, $ME push imagedir/myimage.aci s3://aci.mydomain.com"
+    exit 1
+  fi
+
+  if [[ ! -f "${IMAGE}" ]]; then
+    echo "Image not found: ${IMAGE}"
+    exit 1
+  fi
+
+  SIG=${IMAGE}.asc
+
+  MANIFEST=`actool cat-manifest ${IMAGE}`
+
+  IMAGE_NAME=`echo "${MANIFEST}" | python -c 'import json,sys;o=json.load(sys.stdin);print o["name"]'`
+  if [[ -z "${IMAGE_NAME}" ]]; then
+    echo "Image name could not be parsed from manifest"
+    exit 1
+  fi
+
+  IMAGE_VERSION=`echo "${MANIFEST}" | python -c 'import json,sys;o=json.load(sys.stdin);v=[l["value"] for l in o["labels"] if l["name"] == "version"];print "".join(v)'` || IMAGE_VERSION=""
+  if [[ -z "${IMAGE_VERSION}" ]]; then
+    echo "Image version could not be parsed from manifest"
+    exit 1
+  fi
+
+  echo "Using image name: ${IMAGE_NAME}, version: ${IMAGE_VERSION}"
+
+  if [[ ! -f "${SIG}" ]]; then
+    echo "Signature file not found; signing"
+    gpg --armor --output ${SIG} --detach-sign ${IMAGE}
+  fi
+
+  if [[ "${REPO}" == s3://* ]]; then
+    BUCKET=${REPO:5}
+
+    get_s3_bucket_location ${BUCKET}
+
+    target=linux/amd64/${IMAGE_NAME}-${IMAGE_VERSION}.aci
+    run_url=${S3_URL_BASE}/${target}
+
+    echo "Uploading image to s3://${BUCKET}/${target}"
+    aws --region ${S3_BUCKET_REGION} s3 cp --acl public-read ${IMAGE} s3://${BUCKET}/${target}
+
+    echo "Uploading signature to s3://${BUCKET}/${target}.asc"
+    aws --region ${S3_BUCKET_REGION} s3 cp --acl public-read ${SIG} s3://${BUCKET}/${target}.asc
+  else
+    echo "Unknown repo schema: ${REPO}"
+    echo "Please specify the repo like s3://<bucketname>"
+    exit 1
+  fi
+
+  echo "Image uploaded"
+  echo "Run the image with: rkt run ${run_url}"
+  echo "or, if you have set up a CNAME for the bucket:"
+  echo "rkt run ${IMAGE_NAME}@${IMAGE_VERSION}"
+}
+
+if [[ -z "${COMMAND}" ]]; then
+  echo "syntax: $ME <command> <args...>"
+  show-help
+  exit 1
+fi
+
+shift
+
+case $COMMAND in
+  init)
+    command-init $@
+    ;;
+  push)
+    command-push $@
+    ;;
+  help)
+    show-help
+    ;;
+  *)
+    echo "Unknown command: ${COMMAND}"
+    show-help
+    exit 1
+    ;;
+esac
+exit 0
+
+if [[ -z "${PREFIX}" || -z "${REPO}" ]]; then
+  echo "syntax: $0 <prefix> <repo>"
+  echo "For example, $0 aci.mydomain.com s3://aci.mydomain.com"
+  exit 1
+fi
+
+if [[ "${REPO}" == s3://* ]]; then
+  BUCKET=${REPO:5}
+
+  # TODO: Create bucket automatically?
+
+  echo "Locating bucket..."
+  bucket_region=`aws --output text s3api get-bucket-location --bucket ${BUCKET}`
+  url_base=https://s3-${bucket_region}.amazonaws.com/${BUCKET}
+
+  # us-east-1 does not fit the pattern
+  if [[ "${bucket_region}" == "None" ]]; then
+    bucket_region="us-east-1"
+    url_base=https://s3.amazonaws.com/${BUCKET}
+  fi
+
+  mkdir -p .build/
+
+  if [[ ! -f .build/pubkeys.gpg ]]; then
+    echo "Exporting public keys"
+    gpg --armor --export --output .build/pubkeys.gpg
+  fi
+
+  cat <<EOF >.build/index.html
+<html>
+<head>
+<meta name="ac-discovery" content="${PREFIX} http://${PREFIX}/{os}/{arch}/{name}-{version}.{ext}">
+<meta name="ac-discovery-pubkeys" content="${PREFIX} pubkeys.gpg">
+</head>
+<body>
+</body>
+</html>
+EOF
+
+  trust_url=${url_base}/${target}
+
+  aws --region ${bucket_region} s3 cp --acl public-read .build/pubkeys.gpg s3://${BUCKET}/
+  aws --region ${bucket_region} s3 cp --acl public-read .build/index.html s3://${BUCKET}/
+else
+  echo "Unknown repo schema: ${REPO}"
+  echo "Please specify the repo like s3://<bucketname>"
+  exit 1
+fi
+
+echo "Trust the repo using:"
+echo "rkt trust --prefix ${PREFIX} ${url_base}/pubkeys.gpg"
+
