@@ -35,3 +35,6 @@ openjdk-7-jre
 openjdk-7-jre-headless
 tzdata-java
 zlib1g
+bash
+libncurses5
+libtinfo5

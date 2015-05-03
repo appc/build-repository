@@ -28,7 +28,8 @@ mkdir -p ${BUILD}/packages/
 
 # start from an empty build directory every time
 rm -rf ${BUILD}/layout
-mkdir -p ${BUILD}/layout/rootfs/
+ROOTFS=${BUILD}/layout/rootfs/
+mkdir -p ${ROOTFS}
 
 # download packages specified in packages
 for p in `cat ${SRCDIR}/packages`; do
@@ -39,25 +40,34 @@ for p in `cat ${SRCDIR}/packages`; do
 done
 
 # extract the packages into the rootfs dir
+shopt -s nullglob
 for d in ${BUILD}/packages/*.deb; do
   echo "Extracting $d"
-  dpkg-deb -x ${d} ${BUILD}/layout/rootfs/
+  dpkg-deb -x ${d} ${ROOTFS}
 done
 
 # copy the ACI manifest file
 cp ${SRCDIR}/manifest ${BUILD}/layout/
 
+# Copy a rootfs/ directory, if present in src
+if [[ -d ${SRCDIR}/rootfs/ ]]; then
+  # TODO: Nicer syntax?
+  cp -av ${SRCDIR}/rootfs/ ${ROOTFS}/../
+fi
+
 # call user postbuild script
 if [[ -x ${SRCDIR}/postbuild ]]; then
-  pushd ${BUILD}/layout/rootfs
-  ${SRCDIR}/postbuild ${BUILD}/layout/rootfs
+  pushd ${ROOTFS}
+  ${SRCDIR}/postbuild ${ROOTFS} ${SRCDIR}
   popd
 fi
 
 # build the ACI
 actool build --overwrite ${BUILD}/layout/ ${OUTPUT}
+# Remove the signature - it will now be invalid
+rm -f ${OUTPUT}.asc
 
 # great success
 echo "Your image is now available at ${OUTPUT}"
-echo "Test with: sudo rkt --insecure-skip-verify=true run ${OUTPUT}"
+echo "Test with: sudo rkt --insecure-skip-verify run ${OUTPUT}"
  

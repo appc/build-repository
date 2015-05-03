@@ -1,0 +1,20 @@
+#!/bin/bash
+
+MAIN_CLASS=$1
+WORKDIR=/app
+MAIN_JAR=/app/app.jar
+
+JAVA_ARGS=""
+CP=""
+if [[ -n "${MAIN_CLASS}" ]]; then
+	shift
+	CP=${MAIN_JAR}
+	CP=${CP}:"/app/lib/*"
+	JAVA_ARGS="${JAVA_ARGS} ${MAIN_CLASS}"
+else
+	CP="/app/lib/*"
+	JAVA_ARGS="${JAVA_ARGS} -jar ${MAIN_JAR}"
+fi
+
+cd ${WORKDIR}
+/java -cp "${CP}" ${JAVA_ARGS} $@

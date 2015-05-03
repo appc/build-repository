@@ -1,11 +1,11 @@
 {
   "acVersion": "0.5.1",
   "acKind": "ImageManifest",
-  "name": "aci.justinsb.com/java7",
+  "name": "aci.justinsb.com/jetty9",
   "labels": [
     {
       "name": "version",
-      "value": "7.75.0"
+      "value": "9.2.10.0"
     },
     {
       "name": "arch",
@@ -20,5 +20,8 @@
     "exec": [ "/run" ],
     "user": "0",
     "group": "0"
-  }
+  },
+  "dependencies": [
+    {"app":"aci.justinsb.com/java7"}
+  ]
 }

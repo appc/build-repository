@@ -1,0 +1,17 @@
+#!/bin/bash -e
+
+ROOTFS=${1}
+SRCDIR=${2}
+
+mkdir -p ${SRCDIR}/downloads
+pushd ${SRCDIR}/downloads
+wget -N "http://download.eclipse.org/jetty/stable-9/dist/jetty-distribution-9.2.10.v20150310.tar.gz"
+popd
+
+cd ${ROOTFS}
+mkdir -p jetty
+tar -x -z --strip-components=1 -C jetty -f ${SRCDIR}/downloads/jetty-distribution-9.2.10.v20150310.tar.gz
+
+pushd jetty/webapps
+ln -s ../../app/root.war
+popd
