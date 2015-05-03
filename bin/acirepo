@@ -127,6 +127,7 @@ function command-push() {
     get_s3_bucket_location ${BUCKET}
 
     target=linux/amd64/${IMAGE_NAME}-${IMAGE_VERSION}.aci
+    tag=linux/amd64/${IMAGE_NAME}-latest.aci
     run_url=${S3_URL_BASE}/${target}
 
     echo "Uploading image to s3://${BUCKET}/${target}"
@@ -134,6 +135,10 @@ function command-push() {
 
     echo "Uploading signature to s3://${BUCKET}/${target}.asc"
     aws --region ${S3_BUCKET_REGION} s3 cp --acl public-read ${SIG} s3://${BUCKET}/${target}.asc
+
+    echo "Pointing latest tag"
+    aws --region ${S3_BUCKET_REGION} s3api put-object --bucket ${BUCKET} --key ${tag} --website-redirect-location /${target} --grant-read 'uri="http://acs.amazonaws.com/groups/global/AllUsers"'
+    aws --region ${S3_BUCKET_REGION} s3api put-object --bucket ${BUCKET} --key ${tag}.asc --website-redirect-location /${target}.asc --grant-read 'uri="http://acs.amazonaws.com/groups/global/AllUsers"'
   else
     echo "Unknown repo schema: ${REPO}"
     echo "Please specify the repo like s3://<bucketname>"
@@ -143,7 +148,7 @@ function command-push() {
   echo "Image uploaded"
   echo "Run the image with: rkt run ${run_url}"
   echo "or, if you have set up a CNAME for the bucket:"
-  echo "rkt run ${IMAGE_NAME}@${IMAGE_VERSION}"
+  echo "rkt run ${IMAGE_NAME}:${IMAGE_VERSION}"
 }
 
 if [[ -z "${COMMAND}" ]]; then
