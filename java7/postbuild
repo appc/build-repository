@@ -1,7 +1,9 @@
 #!/bin/bash -e
 
 ROOTFS=${1}
-cd ${ROOTFS}
+SRCDIR=${2}
 
 # symlink java
+cd ${ROOTFS}
 ln -s usr/lib/jvm/java-7-openjdk-amd64/bin/java java
+
